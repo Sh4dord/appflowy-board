@@ -57,6 +57,7 @@ class AppFlowyBoard extends StatelessWidget {
     required this.controller,
     required this.cardBuilder,
     this.headerBuilder,
+    this.builder,
     this.footerBuilder,
     this.background,
     this.groupConstraints = const BoxConstraints(maxWidth: 200),
@@ -96,6 +97,12 @@ class AppFlowyBoard extends StatelessWidget {
   ///
   /// must return a widget.
   final AppFlowyBoardHeaderBuilder? headerBuilder;
+
+  /// The [builder] function which will be invoked on each group build.
+  /// The [builder] takes the [BuildContext] and [AppFlowyGroupData].
+  ///
+  /// must return a widget.
+  final AppFlowyBoardBuilder? builder;
 
   /// The [footerBuilder] function which will be invoked on each group build.
   /// The [footerBuilder] takes the [BuildContext] and [AppFlowyGroupData].
@@ -157,6 +164,7 @@ class AppFlowyBoard extends StatelessWidget {
             groupConstraints: groupConstraints,
             cardBuilder: cardBuilder,
             footerBuilder: footerBuilder,
+            builder: builder,
             headerBuilder: headerBuilder,
             phantomController: phantomController,
             onReorder: controller.moveGroup,
@@ -187,6 +195,7 @@ class _AppFlowyBoardContent extends StatefulWidget {
     this.scrollController,
     this.background,
     this.headerBuilder,
+    this.builder,
     this.footerBuilder,
   }) : reorderFlexConfig = const ReorderFlexConfig(
           direction: Axis.horizontal,
@@ -208,6 +217,7 @@ class _AppFlowyBoardContent extends StatefulWidget {
   final Widget? background;
   final bool shrinkWrap;
   final AppFlowyBoardHeaderBuilder? headerBuilder;
+  final AppFlowyBoardBuilder? builder;
   final AppFlowyBoardFooterBuilder? footerBuilder;
   final ReorderFlexConfig reorderFlexConfig;
 
@@ -259,7 +269,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
                   children: _buildColumns(),
                 ),
               ),
-            )
+            ),
           ],
         );
       },
@@ -300,6 +310,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
                 headerBuilder: _buildHeader,
                 footerBuilder: widget.footerBuilder,
                 cardBuilder: widget.cardBuilder,
+                builder: widget.builder,
                 dataSource: dataSource,
                 scrollController: ScrollController(),
                 shrinkWrap: widget.shrinkWrap,

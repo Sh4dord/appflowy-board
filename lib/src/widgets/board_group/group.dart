@@ -30,6 +30,10 @@ typedef AppFlowyBoardHeaderBuilder = Widget? Function(
   BuildContext context,
   AppFlowyGroupData groupData,
 );
+typedef AppFlowyBoardBuilder = Widget? Function(
+  BuildContext context,
+  AppFlowyGroupData groupData,
+);
 
 typedef AppFlowyBoardFooterBuilder = Widget Function(
   BuildContext context,
@@ -66,6 +70,7 @@ class AppFlowyBoardGroup extends StatefulWidget {
     required this.onReorder,
     required this.dataSource,
     required this.phantomController,
+    this.builder,
     this.headerBuilder,
     this.footerBuilder,
     this.reorderFlexAction,
@@ -86,6 +91,7 @@ class AppFlowyBoardGroup extends StatefulWidget {
   final OnGroupReorder onReorder;
   final AppFlowyGroupDataDataSource dataSource;
   final BoardPhantomController phantomController;
+  final AppFlowyBoardBuilder? builder;
   final AppFlowyBoardHeaderBuilder? headerBuilder;
   final AppFlowyBoardFooterBuilder? footerBuilder;
   final ReorderFlexAction? reorderFlexAction;
@@ -138,12 +144,10 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
           draggableTargetBuilder: PhantomDraggableBuilder(),
         );
 
-        final paddingWidget = Padding(
-          padding: widget.bodyPadding,
-          child: SingleChildScrollView(
-            scrollDirection: widget.config.direction,
-            controller: widget.scrollController,
-            child: ReorderFlex(
+        final builderChild =
+            widget.builder?.call(context, widget.dataSource.groupData);
+        final child = builderChild ??
+            ReorderFlex(
               key: ValueKey(widget.groupId),
               dragStateStorage: widget.dragStateStorage,
               dragTargetKeys: widget.dragTargetKeys,
@@ -168,8 +172,16 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
               interceptor: interceptor,
               reorderFlexAction: widget.reorderFlexAction,
               children: children,
-            ),
-          ),
+            );
+
+        final paddingWidget = Padding(
+          padding: widget.bodyPadding,
+          child: builderChild ??
+              SingleChildScrollView(
+                scrollDirection: widget.config.direction,
+                controller: widget.scrollController,
+                child: child,
+              ),
         );
 
         final reorderWidget = widget.shrinkWrap
