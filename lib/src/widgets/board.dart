@@ -229,7 +229,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
   final GlobalKey _boardContentKey =
       GlobalKey(debugLabel: '$_AppFlowyBoardContent overlay key');
   late BoardOverlayEntry _overlayEntry;
-  late final _scrollController = widget.scrollController ?? ScrollController();
+  late final _scrollController = widget.scrollController ?? PageController();
 
   @override
   void initState() {
@@ -247,28 +247,22 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
                 ),
                 child: widget.background,
               ),
-            Scrollbar(
-              controller: _scrollController,
-              child: SingleChildScrollView(
-                scrollDirection: widget.reorderFlexConfig.direction,
-                controller: _scrollController,
-                child: ReorderFlex(
-                  config: widget.reorderFlexConfig,
-                  scrollController: _scrollController,
-                  onReorder: widget.onReorder,
-                  dataSource: widget.boardController,
-                  autoScroll: true,
-                  interceptor: OverlappingDragTargetInterceptor(
-                    reorderFlexId: widget.boardController.identifier,
-                    acceptedReorderFlexId: widget.boardController.groupIds,
-                    delegate: widget.delegate,
-                    columnsState: widget.boardState,
-                  ),
-                  leading: widget.leading,
-                  trailing: widget.trailing,
-                  children: _buildColumns(),
-                ),
+            ReorderFlex(
+              constrains: widget.groupConstraints,
+              config: widget.reorderFlexConfig,
+              scrollController: _scrollController,
+              onReorder: widget.onReorder,
+              dataSource: widget.boardController,
+              autoScroll: true,
+              interceptor: OverlappingDragTargetInterceptor(
+                reorderFlexId: widget.boardController.identifier,
+                acceptedReorderFlexId: widget.boardController.groupIds,
+                delegate: widget.delegate,
+                columnsState: widget.boardState,
               ),
+              leading: widget.leading,
+              trailing: widget.trailing,
+              children: _buildColumns(),
             ),
           ],
         );
@@ -315,7 +309,8 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
                 scrollController: ScrollController(),
                 shrinkWrap: widget.shrinkWrap,
                 phantomController: widget.phantomController,
-                onReorder: widget.boardController.moveGroupItem,
+                onReorder: (a, b, c) =>
+                    widget.boardController.moveGroupItem(a, b, c, true),
                 cornerRadius: widget.config.groupCornerRadius,
                 backgroundColor: widget.config.groupBackgroundColor,
                 dragStateStorage: widget.boardState,

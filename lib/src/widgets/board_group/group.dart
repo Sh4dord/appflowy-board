@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:ui';
 
 import 'package:appflowy_board/src/widgets/reorder_flex/drag_state.dart';
 import 'package:flutter/material.dart';
@@ -145,35 +146,31 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
           draggableTargetBuilder: PhantomDraggableBuilder(),
         );
 
-        final reorderChild = SingleChildScrollView(
-          scrollDirection: widget.config.direction,
-          controller: widget.scrollController,
-          child: ReorderFlex(
-            key: ValueKey(widget.groupId),
-            dragStateStorage: widget.dragStateStorage,
-            dragTargetKeys: widget.dragTargetKeys,
-            scrollController: widget.scrollController,
-            config: widget.config,
-            onDragStarted: (index) {
-              widget.phantomController.groupStartDragging(widget.groupId);
-              widget.onDragStarted?.call(index);
-            },
-            onReorder: (fromIndex, toIndex) {
-              if (widget.phantomController.shouldReorder(widget.groupId)) {
-                widget.onReorder(widget.groupId, fromIndex, toIndex);
-                widget.phantomController.updateIndex(fromIndex, toIndex);
-              }
-            },
-            onDragEnded: () {
-              widget.phantomController.groupEndDragging(widget.groupId);
-              widget.onDragEnded?.call(widget.groupId);
-              widget.dataSource.debugPrint();
-            },
-            dataSource: widget.dataSource,
-            interceptor: interceptor,
-            reorderFlexAction: widget.reorderFlexAction,
-            children: children,
-          ),
+        final reorderChild = ReorderFlex(
+          key: ValueKey(widget.groupId),
+          dragStateStorage: widget.dragStateStorage,
+          dragTargetKeys: widget.dragTargetKeys,
+          scrollController: widget.scrollController,
+          config: widget.config,
+          onDragStarted: (index) {
+            widget.phantomController.groupStartDragging(widget.groupId);
+            widget.onDragStarted?.call(index);
+          },
+          onReorder: (fromIndex, toIndex) {
+            if (widget.phantomController.shouldReorder(widget.groupId)) {
+              widget.onReorder(widget.groupId, fromIndex, toIndex);
+              widget.phantomController.updateIndex(fromIndex, toIndex);
+            }
+          },
+          onDragEnded: () {
+            widget.phantomController.groupEndDragging(widget.groupId);
+            widget.onDragEnded?.call(widget.groupId);
+            widget.dataSource.debugPrint();
+          },
+          dataSource: widget.dataSource,
+          interceptor: interceptor,
+          reorderFlexAction: widget.reorderFlexAction,
+          children: children,
         );
         final builderChild = widget.builder
                 ?.call(context, widget.dataSource.groupData, reorderChild) ??

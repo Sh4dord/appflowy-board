@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/widgets.dart';
 
 import '../../utils/log.dart';
 import 'drag_state.dart';
@@ -100,6 +99,7 @@ class ReorderFlex extends StatefulWidget {
     required this.children,
     required this.config,
     required this.onReorder,
+    this.constrains,
     this.dragStateStorage,
     this.dragTargetKeys,
     this.onDragStarted,
@@ -114,6 +114,7 @@ class ReorderFlex extends StatefulWidget {
           'All child must have a key.',
         );
 
+  final BoxConstraints? constrains;
   final ReoderFlexDataSource dataSource;
   final List<Widget> children;
   final ReorderFlexConfig config;
@@ -197,7 +198,10 @@ class ReorderFlexState extends State<ReorderFlex>
       resetDragTargetIndex(index);
     };
 
-    _scrollController = widget.scrollController ?? ScrollController();
+    _scrollController = widget.scrollController ??
+        (widget.config.direction == Axis.horizontal
+            ? PageController()
+            : ScrollController());
   }
 
   @override
@@ -246,6 +250,44 @@ class ReorderFlexState extends State<ReorderFlex>
 
       children.add(_wrap(child, i, indexKey, item.draggable));
     }
+
+    return switch (widget.config.direction) {
+      Axis.horizontal => PageView.builder(
+          scrollDirection: widget.config.direction,
+          itemCount: children.length,
+          controller: _scrollController as PageController,
+          //PageController(viewportFraction: 0.9),
+          itemBuilder: (context, index) {
+            return children[index];
+          },
+        ),
+      Axis.vertical => ListView.builder(
+          itemCount: children.length,
+          shrinkWrap: true,
+          controller: _scrollController,
+          itemBuilder: (context, index) {
+            return children[index];
+          },
+        ), /*Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            //if (widget.leading != null) widget.leading!,
+
+            if (widget.trailing != null) widget.trailing!,
+          ],
+        )*/
+    };
+
+    return ListView.builder(
+      scrollDirection: widget.config.direction,
+      itemCount: children.length,
+      shrinkWrap: true,
+      controller: _scrollController,
+      itemBuilder: (context, index) {
+        final c = children[index];
+        return c;
+      },
+    );
 
     return _wrapContainer(children);
   }
