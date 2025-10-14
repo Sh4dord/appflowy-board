@@ -268,28 +268,8 @@ class ReorderFlexState extends State<ReorderFlex>
           itemBuilder: (context, index) {
             return children[index];
           },
-        ), /*Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            //if (widget.leading != null) widget.leading!,
-
-            if (widget.trailing != null) widget.trailing!,
-          ],
-        )*/
+        ),
     };
-
-    return ListView.builder(
-      scrollDirection: widget.config.direction,
-      itemCount: children.length,
-      shrinkWrap: true,
-      controller: _scrollController,
-      itemBuilder: (context, index) {
-        final c = children[index];
-        return c;
-      },
-    );
-
-    return _wrapContainer(children);
   }
 
   @override
@@ -661,29 +641,6 @@ class ReorderFlexState extends State<ReorderFlex>
     }
 
     _animation.reverseAnimation();
-  }
-
-  Widget _wrapContainer(List<Widget> children) {
-    switch (widget.config.direction) {
-      case Axis.horizontal:
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.leading != null) widget.leading!,
-            ...children,
-            if (widget.trailing != null) widget.trailing!,
-          ],
-        );
-      case Axis.vertical:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.leading != null) widget.leading!,
-            ...children,
-            if (widget.trailing != null) widget.trailing!,
-          ],
-        );
-    }
   }
 
   Widget _buildDraggingContainer({required List<Widget> children}) {
