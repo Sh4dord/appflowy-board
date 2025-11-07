@@ -124,6 +124,7 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
 
   @override
   void initState() {
+    Log.info('REBUILD GROUP INITSTATE ${widget.config.direction}');
     super.initState();
 
     _overlayEntry = BoardOverlayEntry(
@@ -224,7 +225,7 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
   Widget _buildWidget(BuildContext context, AppFlowyGroupItem item) {
     if (item is PhantomGroupItem) {
       return PassthroughPhantomWidget(
-        key: UniqueKey(),
+        key: ValueKey('phantom_${item.id}'),
         opacity: widget.config.draggingWidgetOpacity,
         passthroughPhantomContext: item.phantomContext,
       );

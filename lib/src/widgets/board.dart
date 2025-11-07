@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -233,6 +235,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
 
   @override
   void initState() {
+    log('REBUILD BOARD INITSTATE');
     super.initState();
     _overlayEntry = BoardOverlayEntry(
       builder: (context) {
@@ -296,9 +299,11 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
           key: ValueKey(columnData.id),
           value: widget.boardController.getGroupController(columnData.id),
           child: Consumer<AppFlowyGroupController>(
+            key: ValueKey('Consumer_Group_Controller_${columnData.id}'),
             builder: (context, value, child) => ConstrainedBox(
               constraints: widget.groupConstraints,
               child: AppFlowyBoardGroup(
+                key: ValueKey('Group_${columnData.id}'),
                 margin: _marginFromIndex(columnIndex),
                 bodyPadding: widget.config.groupBodyPadding,
                 headerBuilder: _buildHeader,

@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -106,6 +107,7 @@ class BoardOverlayState extends State<BoardOverlay>
 
   @override
   void initState() {
+    log('REBUILD BOARDOVERLAY INITSTATE');
     super.initState();
     insertAll(widget.initialEntries);
   }

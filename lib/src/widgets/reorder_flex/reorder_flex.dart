@@ -169,6 +169,7 @@ class ReorderFlexState extends State<ReorderFlex>
 
   @override
   void initState() {
+    Log.info('REBUILD REORDERFLEX INITSTATE ${widget.config.direction}');
     super.initState();
 
     _notifier = ReorderFlexNotifier();
