@@ -116,6 +116,7 @@ class ReorderFlex extends StatefulWidget {
     this.leading,
     this.trailing,
     this.autoScroll = false,
+    this.dragFeedbackWrapper,
   }) : assert(
           children.every((Widget w) => w.key != null),
           'All child must have a key.',
@@ -146,6 +147,9 @@ class ReorderFlex extends StatefulWidget {
   final Widget? leading;
   final Widget? trailing;
   final bool autoScroll;
+
+  /// Optional wrapper applied around the drag feedback widget.
+  final Widget Function(Widget child)? dragFeedbackWrapper;
 
   @override
   State<ReorderFlex> createState() => ReorderFlexState();
@@ -537,6 +541,7 @@ class ReorderFlexState extends State<ReorderFlex>
       useMoveAnimation: widget.config.useMoveAnimation,
       draggingOpacity: widget.config.draggingWidgetOpacity,
       dragDirection: widget.config.dragDirection,
+      dragFeedbackWrapper: widget.dragFeedbackWrapper,
       child: child,
     );
   }

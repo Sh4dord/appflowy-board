@@ -35,6 +35,8 @@ class AppFlowyBoardConfig {
     this.dragAutoScrollVelocity = 30.0,
     this.cardPageSize = 10,
     this.loadMoreTriggerOffset = 80.0,
+    this.crossGroupDragEnabled = true,
+    this.dragFeedbackWrapper,
   });
 
   // board
@@ -63,6 +65,12 @@ class AppFlowyBoardConfig {
 
   /// Distance from the bottom that triggers loading more cards.
   final double loadMoreTriggerOffset;
+
+  final bool crossGroupDragEnabled;
+
+  /// Optional wrapper applied around the drag feedback widget.
+  /// Use this to re-inject providers that are unavailable in the root Overlay.
+  final Widget Function(Widget child)? dragFeedbackWrapper;
 }
 
 class AppFlowyBoard extends StatelessWidget {
@@ -234,8 +242,7 @@ class _AppFlowyBoardContent extends StatefulWidget {
 }
 
 class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
-  late final _scrollController =
-      widget.scrollController ?? ScrollController();
+  late final _scrollController = widget.scrollController ?? ScrollController();
   late AppFlowyBoardState _boardState;
   late BoardPhantomController _phantomController;
   final Map<String, ScrollController> _groupScrollControllers = {};
@@ -361,6 +368,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
       final dataSource = _BoardGroupDataSourceImpl(
         groupId: columnData.id,
         boardController: widget.boardController,
+        crossGroupDragEnabled: widget.config.crossGroupDragEnabled,
       );
 
       final reorderFlexAction = ReorderFlexActionImpl();
@@ -396,6 +404,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
                 onLoadMore: widget.onLoadMore,
                 hasMore: widget.hasMore,
                 loadingWidgetBuilder: widget.loadingWidgetBuilder,
+                dragFeedbackWrapper: widget.config.dragFeedbackWrapper,
                 onDragStarted: (index) {
                   widget.boardController.onStartDraggingCard
                       ?.call(columnData.id, index);
@@ -421,20 +430,6 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
   }
 
   EdgeInsets _marginFromIndex(int index) {
-    if (widget.boardController.groupDatas.isEmpty) {
-      return widget.config.groupMargin;
-    }
-
-    if (index == 0) {
-      // remove the left padding of the first group
-      return widget.config.groupMargin.copyWith(left: 0);
-    }
-
-    if (index == widget.boardController.groupDatas.length - 1) {
-      // remove the right padding of the last group
-      return widget.config.groupMargin.copyWith(right: 0);
-    }
-
     return widget.config.groupMargin;
   }
 }
@@ -443,17 +438,20 @@ class _BoardGroupDataSourceImpl extends AppFlowyGroupDataDataSource {
   _BoardGroupDataSourceImpl({
     required this.groupId,
     required this.boardController,
+    required this.crossGroupDragEnabled,
   });
 
   final String groupId;
   final AppFlowyBoardController boardController;
+  final bool crossGroupDragEnabled;
 
   @override
   AppFlowyGroupData get groupData =>
       boardController.getGroupController(groupId)!.groupData;
 
   @override
-  List<String> get acceptedGroupIds => boardController.groupIds;
+  List<String> get acceptedGroupIds =>
+      crossGroupDragEnabled ? boardController.groupIds : [];
 }
 
 class AppFlowyBoardState extends DraggingStateStorage

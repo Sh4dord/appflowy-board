@@ -179,6 +179,15 @@ class AppFlowyGroupController extends ChangeNotifier with EquatableMixin {
     }
   }
 
+  /// Replaces all items atomically with a single notification.
+  /// Prefer over multiple add/remove calls to avoid O(N) notifications.
+  void replaceItems(List<AppFlowyGroupItem> newItems) {
+    groupData._items
+      ..clear()
+      ..addAll(newItems);
+    _notify();
+  }
+
   void _notify() {
     notifyListeners();
   }

@@ -91,6 +91,7 @@ class AppFlowyBoardGroup extends StatefulWidget {
     this.onLoadMore,
     this.hasMore,
     this.loadingWidgetBuilder,
+    this.dragFeedbackWrapper,
   }) : config = const ReorderFlexConfig();
 
   final AppFlowyBoardCardBuilder cardBuilder;
@@ -122,6 +123,9 @@ class AppFlowyBoardGroup extends StatefulWidget {
   /// Custom builder for the loading indicator widget.
   /// If not provided, a default CircularProgressIndicator will be used.
   final LoadingWidgetBuilder? loadingWidgetBuilder;
+
+  /// Optional wrapper applied around the drag feedback widget.
+  final Widget Function(Widget child)? dragFeedbackWrapper;
 
   String get groupId => dataSource.groupData.id;
 
@@ -309,6 +313,7 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
       dragTargetKeys: widget.dragTargetKeys,
       scrollController: widget.scrollController,
       config: widget.config,
+      dragFeedbackWrapper: widget.dragFeedbackWrapper,
       onDragStarted: (index) {
         widget.phantomController.groupStartDragging(widget.groupId);
         widget.onDragStarted?.call(index);
