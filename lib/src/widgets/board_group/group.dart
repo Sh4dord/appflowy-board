@@ -26,6 +26,11 @@ typedef AppFlowyBoardCardBuilder = Widget Function(
   AppFlowyGroupItem item,
 );
 
+typedef AppFlowyEmptyCardBuilder = Widget? Function(
+  BuildContext context,
+  AppFlowyGroupData groupData,
+);
+
 typedef AppFlowyBoardHeaderBuilder = Widget? Function(
   BuildContext context,
   AppFlowyGroupData groupData,
@@ -72,6 +77,7 @@ class AppFlowyBoardGroup extends StatefulWidget {
     required this.onReorder,
     required this.dataSource,
     required this.phantomController,
+    this.emptyCardBuilder,
     this.headerBuilder,
     this.footerBuilder,
     this.reorderFlexAction,
@@ -95,6 +101,7 @@ class AppFlowyBoardGroup extends StatefulWidget {
   }) : config = const ReorderFlexConfig();
 
   final AppFlowyBoardCardBuilder cardBuilder;
+  final AppFlowyEmptyCardBuilder? emptyCardBuilder;
   final OnGroupReorder onReorder;
   final AppFlowyGroupDataDataSource dataSource;
   final BoardPhantomController phantomController;
@@ -361,11 +368,17 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
 
     final paddingWidget = Padding(
       padding: widget.bodyPadding,
-      child: SingleChildScrollView(
-        scrollDirection: widget.config.direction,
-        controller: widget.scrollController,
-        child: scrollContent,
-      ),
+      child: children.isEmpty
+          ? Center(
+              child: widget.emptyCardBuilder
+                      ?.call(context, widget.dataSource.groupData) ??
+                  SizedBox.shrink(),
+            )
+          : SingleChildScrollView(
+              scrollDirection: widget.config.direction,
+              controller: widget.scrollController,
+              child: scrollContent,
+            ),
     );
 
     final reorderWidget = widget.shrinkWrap

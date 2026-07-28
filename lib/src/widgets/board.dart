@@ -78,6 +78,7 @@ class AppFlowyBoard extends StatelessWidget {
     super.key,
     required this.controller,
     required this.cardBuilder,
+    this.emptyCardBuilder,
     this.headerBuilder,
     this.footerBuilder,
     this.background,
@@ -115,6 +116,8 @@ class AppFlowyBoard extends StatelessWidget {
   ///
   /// must return a widget.
   final AppFlowyBoardCardBuilder cardBuilder;
+
+  final AppFlowyEmptyCardBuilder? emptyCardBuilder;
 
   /// The [headerBuilder] function which will be invoked on each group build.
   /// The [headerBuilder] takes the [BuildContext] and [AppFlowyGroupData].
@@ -179,6 +182,7 @@ class AppFlowyBoard extends StatelessWidget {
             background: background,
             groupConstraints: groupConstraints,
             cardBuilder: cardBuilder,
+            emptyCardBuilder: emptyCardBuilder,
             footerBuilder: footerBuilder,
             headerBuilder: headerBuilder,
             onLoadMore: onLoadMore,
@@ -203,6 +207,7 @@ class _AppFlowyBoardContent extends StatefulWidget {
     required this.scrollManager,
     required this.groupConstraints,
     required this.cardBuilder,
+    this.emptyCardBuilder,
     this.onLoadMore,
     this.hasMore,
     this.loadingWidgetBuilder,
@@ -225,6 +230,7 @@ class _AppFlowyBoardContent extends StatefulWidget {
   final AppFlowyBoardScrollController? scrollManager;
   final BoxConstraints groupConstraints;
   final AppFlowyBoardCardBuilder cardBuilder;
+  final AppFlowyEmptyCardBuilder? emptyCardBuilder;
   final OnLoadMoreCards? onLoadMore;
   final HasMoreCards? hasMore;
   final LoadingWidgetBuilder? loadingWidgetBuilder;
@@ -400,6 +406,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
                 headerBuilder: _buildHeader,
                 footerBuilder: widget.footerBuilder,
                 cardBuilder: widget.cardBuilder,
+                emptyCardBuilder: widget.emptyCardBuilder,
                 dataSource: dataSource,
                 scrollController:
                     _getOrCreateGroupScrollController(columnData.id),
