@@ -139,6 +139,20 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
   bool _isLoadingMore = false;
   int _lastTotalItems = 0;
 
+  /// Stable key objects per item id, reused across rebuilds. `_buildWidget`
+  /// otherwise constructs a brand-new `ValueKey(item.id)` every `build()`
+  /// call — and since `ReorderFlex`/`ReorderDragTarget` wrap each card in a
+  /// `GlobalObjectKey`/`KeyedSubtree` keyed off THAT object (compared by
+  /// `identical()`, not `==`), a fresh key object every build makes Flutter
+  /// treat every unchanged card as a brand-new widget on every
+  /// `notifyListeners()` from this group's controller (`replaceItems`,
+  /// `updateGroupName`, ...) — tearing down and reinflating every card's
+  /// State even when nothing about it changed.
+  final Map<String, ValueKey<String>> _itemKeys = {};
+
+  ValueKey<String> _keyFor(String itemId) =>
+      _itemKeys.putIfAbsent(itemId, () => ValueKey(itemId));
+
   @override
   void initState() {
     super.initState();
@@ -266,6 +280,8 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
     final visibleCount =
         widget.cardPageSize <= 0 ? totalItems : min(_visibleCount, totalItems);
     final visibleItems = items.take(visibleCount).toList();
+    final visibleIds = visibleItems.map((item) => item.id).toSet();
+    _itemKeys.removeWhere((id, _) => !visibleIds.contains(id));
     final children =
         visibleItems.map((item) => _buildWidget(context, item)).toList();
 
@@ -404,7 +420,7 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
 
     final card = widget.cardBuilder(context, widget.dataSource.groupData, item);
     return RepaintBoundary(
-      key: ValueKey(item.id),
+      key: _keyFor(item.id),
       child: card,
     );
   }

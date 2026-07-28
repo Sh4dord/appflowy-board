@@ -365,6 +365,81 @@ void main() {
 
       expect(find.text('New Name'), findsOneWidget);
     });
+
+    testWidgets('a card\'s State survives an unrelated group-level notify', (
+      tester,
+    ) async {
+      final controller = createTestController();
+      controller.addGroup(AppFlowyGroupData(
+        id: 'group1',
+        name: 'List 1',
+        items: [TextItem('t1'), TextItem('t2')],
+      ),);
+
+      await tester.pumpWidget(buildTestBoard(controller: controller));
+      await tester.pumpAndSettle();
+
+      final elementBefore = tester.element(find.byKey(const Key('card_t1')));
+
+      // Any notifyListeners() on the group's own controller — e.g. renaming
+      // it — must not tear down and reinflate the cards.
+      controller.getGroupController('group1')?.updateGroupName('List 1 renamed');
+      await tester.pumpAndSettle();
+
+      final elementAfter = tester.element(find.byKey(const Key('card_t1')));
+      expect(identical(elementBefore, elementAfter), isTrue);
+    });
+
+    testWidgets(
+      "a column's AppFlowyBoardGroup survives an unrelated ancestor rebuild",
+      (tester) async {
+        final controller = createTestController();
+        controller.addGroup(AppFlowyGroupData(
+          id: 'group1',
+          name: 'List 1',
+          items: [TextItem('t1'), TextItem('t2')],
+        ),);
+
+        // Simulates an ancestor (e.g. a widget depending on an ambient
+        // MediaQuery/ScrollConfiguration) rebuilding and reconstructing
+        // `AppFlowyBoard` with a brand-new widget instance, without touching
+        // the controller or its data at all.
+        final rebuildNotifier = ValueNotifier<int>(0);
+        Widget build() {
+          return MaterialApp(
+            home: Scaffold(
+              body: ValueListenableBuilder<int>(
+                valueListenable: rebuildNotifier,
+                builder: (context, _, __) => AppFlowyBoard(
+                  controller: controller,
+                  cardBuilder: (context, group, groupItem) {
+                    return AppFlowyGroupCard(
+                      key: ValueKey(groupItem.id),
+                      child: Text(groupItem.id, key: Key('card_${groupItem.id}')),
+                    );
+                  },
+                  groupConstraints: const BoxConstraints.tightFor(width: 200),
+                ),
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(build());
+        await tester.pumpAndSettle();
+
+        final groupElementBefore = tester.state(find.byType(AppFlowyBoardGroup));
+        final cardElementBefore = tester.element(find.byKey(const Key('card_t1')));
+
+        rebuildNotifier.value++;
+        await tester.pump();
+
+        final groupElementAfter = tester.state(find.byType(AppFlowyBoardGroup));
+        final cardElementAfter = tester.element(find.byKey(const Key('card_t1')));
+        expect(identical(groupElementBefore, groupElementAfter), isTrue);
+        expect(identical(cardElementBefore, cardElementAfter), isTrue);
+      },
+    );
   });
 
   group('AppFlowyBoard - Configuration', () {

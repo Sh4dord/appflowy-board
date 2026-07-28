@@ -247,6 +247,21 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
   late BoardPhantomController _phantomController;
   final Map<String, ScrollController> _groupScrollControllers = {};
 
+  /// Stable key objects per column id, reused across rebuilds. `_buildColumns`
+  /// otherwise constructs a brand-new `ValueKey(columnData.id)` every
+  /// `build()` call — and the outer board-level `ReorderFlex` wraps each
+  /// column in a `GlobalObjectKey(child.key!)` (compared by `identical()`,
+  /// not `==`), so a fresh key object every build makes Flutter treat every
+  /// unchanged column as a brand-new widget on any rebuild of this State
+  /// (e.g. one triggered by an ambient `MediaQuery`/`ScrollConfiguration`
+  /// dependency elsewhere) — tearing down and reinflating every column's
+  /// `AppFlowyBoardGroup`, and every card inside it, even when nothing about
+  /// the board's data changed.
+  final Map<String, ValueKey<String>> _columnKeys = {};
+
+  ValueKey<String> _keyFor(String columnId) =>
+      _columnKeys.putIfAbsent(columnId, () => ValueKey(columnId));
+
   @override
   void initState() {
     super.initState();
@@ -360,6 +375,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
       _groupScrollControllers[groupId]?.dispose();
       _groupScrollControllers.remove(groupId);
     }
+    _columnKeys.removeWhere((id, _) => !currentGroupIds.contains(id));
 
     widget.boardController.groupDatas.asMap().entries.map((item) {
       final columnData = item.value;
@@ -376,7 +392,7 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
 
       children.add(
         ChangeNotifierProvider.value(
-          key: ValueKey(columnData.id),
+          key: _keyFor(columnData.id),
           value: widget.boardController.getGroupController(columnData.id),
           child: Consumer<AppFlowyGroupController>(
             builder: (context, value, child) => ConstrainedBox(
