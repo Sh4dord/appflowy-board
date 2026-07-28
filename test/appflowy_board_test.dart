@@ -849,6 +849,110 @@ void main() {
     });
   });
 
+  group('AppFlowyBoard - Cross-Group Drag Into Empty Column', () {
+    // Regression coverage for: dragging a card onto an EMPTY destination
+    // group was suspected of tripping `AppFlowyBoardController
+    // .moveGroupItemToAnotherGroup`'s `assert(toGroupController
+    // .items[toGroupIndex] is PhantomGroupItem)` in debug/profile builds,
+    // since the empty group's only item is a permanent, non-draggable
+    // placeholder (not a real `PhantomGroupItem`). Calling
+    // `moveGroupItemToAnotherGroup` directly (bypassing a real drag gesture)
+    // does trip that assert — but that only proves the assert exists, not
+    // that it fires during real usage.
+    //
+    // This test drives an ACTUAL drag gesture (pointer down / move / up),
+    // not a direct controller call, to prove what happens on a real device:
+    // hovering a dragged card over ANY drag target — including a permanent
+    // non-draggable placeholder card — makes `ReorderDragTarget`'s
+    // `onWillAcceptWithDetails` fire, which inserts a genuine
+    // `PhantomGroupItem` over the placeholder before the drop completes. So
+    // the assert holds, and `onMoveGroupItemToGroup` fires normally with a
+    // real (non-crashing) `toIndex`. If this test starts throwing an
+    // AssertionError, the phantom-insertion contract this relies on has
+    // regressed and needs a real fix at this layer — not a guard in a
+    // downstream caller.
+    testWidgets(
+      'dropping onto an empty group (single non-draggable placeholder) '
+      'inserts a real PhantomGroupItem first, so the move completes without '
+      'tripping the PhantomGroupItem assert',
+      (tester) async {
+        String? capturedFromGroup;
+        int? capturedFromIndex;
+        String? capturedToGroup;
+        int? capturedToIndex;
+        var callbackCount = 0;
+
+        final controller = createTestController(
+          onMoveGroupItemToGroup: (fromGroupId, fromIndex, toGroupId, toIndex) {
+            callbackCount++;
+            capturedFromGroup = fromGroupId;
+            capturedFromIndex = fromIndex;
+            capturedToGroup = toGroupId;
+            capturedToIndex = toIndex;
+          },
+        );
+        controller.addGroup(AppFlowyGroupData(
+          id: 'group1',
+          name: 'Group 1',
+          items: [TextItem('Item A')],
+        ),);
+        // A permanent, non-draggable placeholder — mirroring wimi_task's
+        // `_KanbanAppFlowyGroupItem` (kanban_appflowy_board_sync.dart),
+        // which every empty column renders so a cross-group drag always has
+        // something to hover/drop onto.
+        final placeholder = TextItem('group2::empty')..draggable.value = false;
+        controller.addGroup(AppFlowyGroupData(
+          id: 'group2',
+          name: 'Group 2',
+          items: [placeholder],
+        ),);
+
+        await tester.pumpWidget(buildTestBoard(
+          controller: controller,
+          groupConstraints: const BoxConstraints.tightFor(width: 200, height: 400),
+        ),);
+        await tester.pumpAndSettle();
+
+        final sourceCenter = tester.getCenter(find.byKey(const Key('card_Item A')));
+        final destCenter = tester.getCenter(find.byKey(const Key('card_group2::empty')));
+
+        final gesture = await tester.startGesture(sourceCenter);
+        await tester.pump(const Duration(milliseconds: 50));
+        // Clear the drag-recognition slop threshold before crossing groups.
+        await gesture.moveTo(sourceCenter + const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 50));
+        await gesture.moveTo(destCenter);
+        // Let the phantom-insertion machinery (including the board-level
+        // interceptor's delayed 100ms fallback) settle before releasing.
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(callbackCount, 1);
+        expect(capturedFromGroup, 'group1');
+        expect(capturedFromIndex, 0);
+        expect(capturedToGroup, 'group2');
+        expect(capturedToIndex, 0);
+
+        // The moved item lands in group2; group1 loses it. The stale
+        // placeholder is left behind by design — `moveGroupItemToAnotherGroup`
+        // only replaces the phantom's slot, it doesn't prune siblings. Callers
+        // (e.g. wimi_task's `syncKanbanAppFlowyBoard`) are expected to
+        // reconcile the group back to just the real items on their next sync.
+        expect(
+          controller.getGroupController('group1')?.items.map((e) => e.id),
+          isEmpty,
+        );
+        expect(
+          controller.getGroupController('group2')?.items.map((e) => e.id),
+          containsAll(['Item A']),
+        );
+      },
+    );
+  });
+
   group('AppFlowyBoard - Dragging State', () {
     testWidgets('item draggable state can be toggled', (tester) async {
       final controller = createTestController();
