@@ -1304,4 +1304,31 @@ void main() {
       expect(find.text('Rich: Rich'), findsOneWidget);
     });
   });
+
+  group('AppFlowyBoard - Paged Columns', () {
+    testWidgets(
+      'a board with groupPageViewportFraction set renders no horizontal SingleChildScrollView and pages via PageController',
+      (tester) async {
+        final controller = createTestController();
+        controller.addGroups([
+          AppFlowyGroupData(id: 'g1', name: 'List 1', items: [TextItem('t1')]),
+          AppFlowyGroupData(id: 'g2', name: 'List 2', items: [TextItem('t2')]),
+        ]);
+
+        await tester.pumpWidget(
+          buildTestBoard(
+            controller: controller,
+            config: const AppFlowyBoardConfig(groupPageViewportFraction: 0.9),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final horizontalScrollViews = find.byWidgetPredicate(
+          (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+        );
+        expect(horizontalScrollViews, findsNothing);
+        expect(find.byType(PageView), findsOneWidget);
+      },
+    );
+  });
 }

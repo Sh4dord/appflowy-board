@@ -37,6 +37,9 @@ class AppFlowyBoardConfig {
     this.loadMoreTriggerOffset = 80.0,
     this.crossGroupDragEnabled = true,
     this.dragFeedbackWrapper,
+    this.groupPageViewportFraction,
+    this.groupPageCacheExtent,
+    this.groupPageAutoScrollMaxTickDelta,
   });
 
   // board
@@ -71,6 +74,21 @@ class AppFlowyBoardConfig {
   /// Optional wrapper applied around the drag feedback widget.
   /// Use this to re-inject providers that are unavailable in the root Overlay.
   final Widget Function(Widget child)? dragFeedbackWrapper;
+
+  /// When non-null, the board's horizontal (group-level) scroll renders as
+  /// a native `PageView` with this `PageController.viewportFraction`,
+  /// instead of the default `Row` inside a `SingleChildScrollView`. Null
+  /// preserves the original behavior.
+  final double? groupPageViewportFraction;
+
+  /// `PageView` cache extent (in logical pixels) used when
+  /// [groupPageViewportFraction] is set.
+  final double? groupPageCacheExtent;
+
+  /// Caps the auto-scroller's per-tick jump distance when
+  /// [groupPageViewportFraction] is set. See
+  /// `BoardDragAutoScroller.maxTickDelta`.
+  final double? groupPageAutoScrollMaxTickDelta;
 }
 
 class AppFlowyBoard extends StatelessWidget {
@@ -222,6 +240,9 @@ class _AppFlowyBoardContent extends StatefulWidget {
           direction: Axis.horizontal,
           dragDirection: Axis.horizontal,
           autoScrollVelocityScalar: config.dragAutoScrollVelocity,
+          horizontalPageViewportFraction: config.groupPageViewportFraction,
+          horizontalPageCacheExtent: config.groupPageCacheExtent,
+          autoScrollMaxTickDelta: config.groupPageAutoScrollMaxTickDelta,
         );
 
   final AppFlowyBoardConfig config;
@@ -248,7 +269,12 @@ class _AppFlowyBoardContent extends StatefulWidget {
 }
 
 class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
-  late final _scrollController = widget.scrollController ?? ScrollController();
+  late final _scrollController = widget.scrollController ??
+      (widget.config.groupPageViewportFraction != null
+          ? PageController(
+              viewportFraction: widget.config.groupPageViewportFraction!,
+            )
+          : ScrollController());
   late AppFlowyBoardState _boardState;
   late BoardPhantomController _phantomController;
   final Map<String, ScrollController> _groupScrollControllers = {};
@@ -322,6 +348,24 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
 
   @override
   Widget build(BuildContext context) {
+    final reorderFlex = ReorderFlex(
+      config: widget.reorderFlexConfig,
+      scrollController: _scrollController,
+      onReorder: widget.onReorder,
+      dataSource: widget.boardController,
+      autoScroll: true,
+      interceptor: OverlappingDragTargetInterceptor(
+        reorderFlexId: widget.boardController.identifier,
+        acceptedReorderFlexId: widget.boardController.groupIds,
+        delegate: _phantomController,
+        columnsState: _boardState,
+      ),
+      leading: widget.leading,
+      trailing: widget.trailing,
+      children: _buildColumns(),
+    );
+    final isPaged = widget.reorderFlexConfig.horizontalPageViewportFraction != null;
+
     return Stack(
       fit: StackFit.passthrough,
       children: [
@@ -334,26 +378,14 @@ class _AppFlowyBoardContentState extends State<_AppFlowyBoardContent> {
             ),
             child: widget.background,
           ),
-        SingleChildScrollView(
-          scrollDirection: widget.reorderFlexConfig.direction,
-          controller: _scrollController,
-          child: ReorderFlex(
-            config: widget.reorderFlexConfig,
-            scrollController: _scrollController,
-            onReorder: widget.onReorder,
-            dataSource: widget.boardController,
-            autoScroll: true,
-            interceptor: OverlappingDragTargetInterceptor(
-              reorderFlexId: widget.boardController.identifier,
-              acceptedReorderFlexId: widget.boardController.groupIds,
-              delegate: _phantomController,
-              columnsState: _boardState,
-            ),
-            leading: widget.leading,
-            trailing: widget.trailing,
-            children: _buildColumns(),
+        if (isPaged)
+          reorderFlex
+        else
+          SingleChildScrollView(
+            scrollDirection: widget.reorderFlexConfig.direction,
+            controller: _scrollController,
+            child: reorderFlex,
           ),
-        ),
       ],
     );
   }
