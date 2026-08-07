@@ -59,7 +59,11 @@ abstract class ReorderFlexAction {
 
   void Function(int)? _resetDragTargetIndex;
 
-  void Function(int) get resetDragTargetIndex => _resetDragTargetIndex!;
+  /// No-ops if no `ReorderFlex` ever wired this up — e.g. the target group
+  /// stayed empty and rendered its `emptyCardBuilder` instead of mounting a
+  /// `ReorderFlex` at all (see `AppFlowyBoardGroup.build`), so there is
+  /// nothing to reset yet.
+  void resetDragTargetIndex(int index) => _resetDragTargetIndex?.call(index);
 }
 
 class ReorderFlexConfig {

@@ -1388,4 +1388,15 @@ void main() {
       },
     );
   });
+
+  group('ReorderFlexAction', () {
+    test(
+      'resetDragTargetIndex does not throw when no ReorderFlex ever wired it '
+      '(e.g. a target group whose column stayed empty and never mounted one)',
+      () {
+        final action = ReorderFlexActionImpl();
+        expect(() => action.resetDragTargetIndex(0), returnsNormally);
+      },
+    );
+  });
 }
