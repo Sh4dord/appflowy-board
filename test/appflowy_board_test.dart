@@ -1,7 +1,10 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:appflowy_board/appflowy_board.dart';
 import 'package:appflowy_board/src/widgets/board_group/group.dart';
+import 'package:appflowy_board/src/widgets/reorder_flex/reorder_flex.dart';
 
 // Test data models
 class TextItem extends AppFlowyGroupItem {
@@ -21,6 +24,26 @@ class RichTextItem extends AppFlowyGroupItem {
 
   @override
   String get id => title;
+}
+
+class _StubReorderFlexItem extends ReoderFlexItem {
+  _StubReorderFlexItem(this.id);
+
+  @override
+  final String id;
+}
+
+class _StubReorderFlexDataSource extends ReoderFlexDataSource {
+  _StubReorderFlexDataSource({required List<String> itemIds})
+      : items = UnmodifiableListView(
+          itemIds.map((id) => _StubReorderFlexItem(id)),
+        );
+
+  @override
+  String get identifier => 'stub';
+
+  @override
+  final UnmodifiableListView<ReoderFlexItem> items;
 }
 
 // Test helpers
@@ -438,6 +461,63 @@ void main() {
         final cardElementAfter = tester.element(find.byKey(const Key('card_t1')));
         expect(identical(groupElementBefore, groupElementAfter), isTrue);
         expect(identical(cardElementBefore, cardElementAfter), isTrue);
+      },
+    );
+
+    testWidgets(
+      'horizontal board renders a Row (not PageView) when no paging config is set',
+      (tester) async {
+        final controller = createTestController();
+        controller.addGroup(AppFlowyGroupData(
+          id: 'group1',
+          name: 'List 1',
+          items: [TextItem('t1')],
+        ),);
+
+        await tester.pumpWidget(buildTestBoard(controller: controller));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PageView), findsNothing);
+        expect(find.byType(Row), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'horizontal board renders a PageView when horizontalPageViewportFraction is set via ReorderFlex directly',
+      (tester) async {
+        const config = ReorderFlexConfig(
+          direction: Axis.horizontal,
+          dragDirection: Axis.horizontal,
+          horizontalPageViewportFraction: 0.9,
+        );
+        final dataSource = _StubReorderFlexDataSource(itemIds: ['a', 'b', 'c']);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 400,
+                height: 200,
+                child: ReorderFlex(
+                  scrollController: null,
+                  config: config,
+                  dataSource: dataSource,
+                  onReorder: (from, to) {},
+                  children: [
+                    SizedBox(key: const ValueKey('a'), width: 360, child: const Text('a')),
+                    SizedBox(key: const ValueKey('b'), width: 360, child: const Text('b')),
+                    SizedBox(key: const ValueKey('c'), width: 360, child: const Text('c')),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PageView), findsOneWidget);
+        final pageView = tester.widget<PageView>(find.byType(PageView));
+        expect((pageView.controller as PageController).viewportFraction, 0.9);
       },
     );
   });

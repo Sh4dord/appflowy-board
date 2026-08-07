@@ -69,6 +69,9 @@ class ReorderFlexConfig {
     this.dragDirection,
     this.shrinkWrap = false,
     this.autoScrollVelocityScalar = 30.0,
+    this.horizontalPageViewportFraction,
+    this.horizontalPageCacheExtent,
+    this.autoScrollMaxTickDelta,
   }) : useMovePlaceholder = !useMoveAnimation;
 
   final bool useMoveAnimation;
@@ -97,6 +100,23 @@ class ReorderFlexConfig {
   /// Lower values result in slower scrolling. Default is 30.0.
   /// The previous hardcoded value was 50.0 which users reported as too fast.
   final double autoScrollVelocityScalar;
+
+  /// When non-null and [direction] is [Axis.horizontal], children are laid
+  /// out as pages of a native [PageView] (via [PageController.viewportFraction])
+  /// instead of a plain [Row]. Null preserves the original Row-based layout —
+  /// existing callers are unaffected unless they opt in.
+  final double? horizontalPageViewportFraction;
+
+  /// [PageView.cacheExtent] used when [horizontalPageViewportFraction] is
+  /// set. Null uses [PageView]'s own default cache extent.
+  final double? horizontalPageCacheExtent;
+
+  /// Caps the per-tick auto-scroll jump distance during a drag so a single
+  /// frame can never advance further than [horizontalPageCacheExtent]
+  /// covers — guaranteeing intermediate pages mount progressively instead of
+  /// being skipped over. Null preserves unclamped behavior. See
+  /// `BoardDragAutoScroller.maxTickDelta`.
+  final double? autoScrollMaxTickDelta;
 }
 
 class ReorderFlex extends StatefulWidget {
@@ -209,7 +229,13 @@ class ReorderFlexState extends State<ReorderFlex>
       resetDragTargetIndex(index);
     };
 
-    _scrollController = widget.scrollController ?? ScrollController();
+    _scrollController = widget.scrollController ??
+        (widget.config.direction == Axis.horizontal &&
+                widget.config.horizontalPageViewportFraction != null
+            ? PageController(
+                viewportFraction: widget.config.horizontalPageViewportFraction!,
+              )
+            : ScrollController());
   }
 
   @override
@@ -643,6 +669,21 @@ class ReorderFlexState extends State<ReorderFlex>
   Widget _wrapContainer(List<Widget> children) {
     switch (widget.config.direction) {
       case Axis.horizontal:
+        final viewportFraction = widget.config.horizontalPageViewportFraction;
+        if (viewportFraction != null) {
+          final cacheExtent = widget.config.horizontalPageCacheExtent;
+          // PageView's own `padEnds` (default true) centers the first/last
+          // page exactly like manual leading/trailing spacer widgets would —
+          // so, unlike the Row branch below, `leading`/`trailing` are not
+          // included here; they'd render as extra, spurious pages.
+          return PageView(
+            key: _containerKey,
+            controller: _scrollController as PageController,
+            scrollCacheExtent:
+                cacheExtent != null ? ScrollCacheExtent.pixels(cacheExtent) : null,
+            children: children,
+          );
+        }
         return Row(
           key: _containerKey,
           crossAxisAlignment: CrossAxisAlignment.start,
