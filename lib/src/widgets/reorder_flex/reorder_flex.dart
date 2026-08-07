@@ -679,6 +679,10 @@ class ReorderFlexState extends State<ReorderFlex>
           return PageView(
             key: _containerKey,
             controller: _scrollController as PageController,
+            // Flutter requires these two to agree: a non-zero cache extent
+            // only takes effect when implicit (off-screen) scrolling is
+            // allowed.
+            allowImplicitScrolling: cacheExtent != null,
             scrollCacheExtent:
                 cacheExtent != null ? ScrollCacheExtent.pixels(cacheExtent) : null,
             children: children,

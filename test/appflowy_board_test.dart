@@ -1330,5 +1330,62 @@ void main() {
         expect(find.byType(PageView), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'a column outside the cache window is unmounted until the PageController scrolls near it',
+      (tester) async {
+        final controller = createTestController();
+        controller.addGroups(
+          List.generate(
+            20,
+            (i) => AppFlowyGroupData(
+              id: 'g$i',
+              name: 'List $i',
+              items: [TextItem('t$i')],
+            ),
+          ),
+        );
+        final pageController = PageController(viewportFraction: 1.0);
+        addTearDown(pageController.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 400,
+                height: 600,
+                child: AppFlowyBoard(
+                  controller: controller,
+                  scrollController: pageController,
+                  cardBuilder: (context, group, groupItem) => AppFlowyGroupCard(
+                    key: ValueKey(groupItem.id),
+                    child: Text(groupItem.id, key: Key('card_${groupItem.id}')),
+                  ),
+                  headerBuilder: (context, groupData) =>
+                      Text('header:${groupData.id}', key: Key('header_${groupData.id}')),
+                  groupConstraints: const BoxConstraints.tightFor(width: 400),
+                  config: const AppFlowyBoardConfig(
+                    groupPageViewportFraction: 1.0,
+                    groupPageCacheExtent: 400, // ~1 page ahead
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Column 15 is far outside a ~1-page cache window from column 0.
+        expect(find.byKey(const Key('header_g15')), findsNothing);
+
+        pageController.jumpToPage(15);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('header_g15')), findsOneWidget);
+
+        // And column 0, now far behind, should no longer be mounted.
+        expect(find.byKey(const Key('header_g0')), findsNothing);
+      },
+    );
   });
 }
