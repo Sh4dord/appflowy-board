@@ -1031,6 +1031,120 @@ void main() {
         );
       },
     );
+
+    // Regression test for: hovering a genuinely EMPTY destination group
+    // (zero items — no placeholder, matching wimi_task's current
+    // kanban_appflowy_board_sync.dart, which stopped inserting a permanent
+    // placeholder item as of the "Fixed empty center" change) without ever
+    // dropping there — then backing the drag out to somewhere else — used
+    // to permanently disable that group as a drop target for the rest of
+    // the app's lifetime. Root cause: `BoardPhantomController._insertPhantom`
+    // mounting a phantom in an empty group triggers that group's
+    // `ReorderFlex.onDragStarted` (via the phantom's fake drag target),
+    // which calls `groupStartDragging` and marks the group as "dragging".
+    // `cancel()` (fired when the drag backs out without dropping) removed
+    // the phantom via `_removePhantom` but never called the matching
+    // `groupEndDragging`/`setGroupIsDragging(groupId, false)` — so the flag
+    // stayed stuck `true` forever, and `getInsertedIndex` unconditionally
+    // returns -1 for a group it thinks is "still dragging", silently
+    // killing every future hover/drop attempt (no phantom shown, no
+    // callback fires, no error — see `drag_target_interceptor.dart`'s
+    // delayed branch: `if (index != -1) { ... }`).
+    testWidgets(
+      'a genuinely empty group accepts a drop again after an earlier hover was cancelled without dropping',
+      (tester) async {
+        var callbackCount = 0;
+        String? capturedToGroup;
+
+        final controller = createTestController(
+          onMoveGroupItemToGroup: (fromGroupId, fromIndex, toGroupId, toIndex) {
+            callbackCount++;
+            capturedToGroup = toGroupId;
+          },
+        );
+        controller.addGroup(AppFlowyGroupData(
+          id: 'source',
+          name: 'Source',
+          items: [TextItem('Item A'), TextItem('Item B')],
+        ),);
+        // Genuinely empty — no placeholder item, matching production. Must
+        // be a growable `List<AppFlowyGroupItem>`, not `const []` (immutable)
+        // and not the narrower `List<TextItem>` (AppFlowyGroupData/Controller
+        // store this list by reference and later `insert()` a PhantomGroupItem
+        // into it without copying first — a narrower reified type throws a
+        // TypeError on that insert, exactly like wimi_task's own
+        // kanban_appflowy_board_sync.dart documents for its item lists).
+        controller.addGroup(AppFlowyGroupData(
+          id: 'empty',
+          name: 'Empty',
+          items: <AppFlowyGroupItem>[],
+        ),);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: AppFlowyBoard(
+                controller: controller,
+                cardBuilder: (context, group, groupItem) => AppFlowyGroupCard(
+                  key: ValueKey(groupItem.id),
+                  child: Text(groupItem.id, key: Key('card_${groupItem.id}')),
+                ),
+                emptyCardBuilder: (context, groupData) => Container(
+                  key: Key('empty_${groupData.id}'),
+                  width: 100,
+                  height: 40,
+                ),
+                groupConstraints: const BoxConstraints.tightFor(width: 200, height: 400),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final sourceCenter = tester.getCenter(find.byKey(const Key('card_Item A')));
+        final emptyCenter = tester.getCenter(find.byKey(const Key('empty_empty')));
+
+        // First attempt: hover the empty group, then back OUT without
+        // dropping there — release back over the source group instead.
+        final firstGesture = await tester.startGesture(sourceCenter);
+        await tester.pump(const Duration(milliseconds: 50));
+        await firstGesture.moveTo(sourceCenter + const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 50));
+        await firstGesture.moveTo(emptyCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+        // Back out to the source group instead of dropping on 'empty'.
+        await firstGesture.moveTo(sourceCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await firstGesture.up();
+        await tester.pumpAndSettle();
+
+        expect(callbackCount, 0, reason: 'the first drag was cancelled, not dropped');
+
+        // Second attempt: a fresh drag hovering the SAME empty group, this
+        // time actually dropping there. Without the fix, this silently
+        // does nothing (no phantom, no callback) because the group is
+        // still marked as "dragging" from the first, cancelled attempt.
+        final secondSourceCenter = tester.getCenter(find.byKey(const Key('card_Item B')));
+        final secondGesture = await tester.startGesture(secondSourceCenter);
+        await tester.pump(const Duration(milliseconds: 50));
+        await secondGesture.moveTo(secondSourceCenter + const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 50));
+        await secondGesture.moveTo(emptyCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+        await secondGesture.up();
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          callbackCount,
+          1,
+          reason: 'the empty group must still accept a drop after an earlier cancelled hover',
+        );
+        expect(capturedToGroup, 'empty');
+      },
+    );
   });
 
   group('AppFlowyBoard - Dragging State', () {
