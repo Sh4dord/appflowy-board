@@ -425,7 +425,7 @@ class _AppFlowyBoardGroupState extends State<AppFlowyBoardGroup> {
   Widget _buildWidget(BuildContext context, AppFlowyGroupItem item) {
     if (item is PhantomGroupItem) {
       return PassthroughPhantomWidget(
-        key: UniqueKey(),
+        key: _keyFor(item.id),
         opacity: widget.config.draggingWidgetOpacity,
         passthroughPhantomContext: item.phantomContext,
       );

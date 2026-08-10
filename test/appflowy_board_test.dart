@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:appflowy_board/appflowy_board.dart';
 import 'package:appflowy_board/src/widgets/board_group/group.dart';
 import 'package:appflowy_board/src/widgets/reorder_flex/reorder_flex.dart';
+import 'package:appflowy_board/src/widgets/reorder_flex/drag_target.dart';
+import 'package:appflowy_board/src/widgets/reorder_flex/drag_state.dart';
 
 // Test data models
 class TextItem extends AppFlowyGroupItem {
@@ -1143,6 +1145,121 @@ void main() {
           reason: 'the empty group must still accept a drop after an earlier cancelled hover',
         );
         expect(capturedToGroup, 'empty');
+      },
+    );
+
+    // Regression test for: a phantom card mounted mid-hover does not survive
+    // an UNRELATED rebuild of its own group (e.g. a websocket-driven
+    // `syncGroups` resync landing while the user is still dragging). Root
+    // cause: `_AppFlowyBoardGroupState._buildWidget`'s phantom branch keys
+    // the phantom's `PassthroughPhantomWidget` with `UniqueKey()`, constructed
+    // fresh on every single `build()` — unlike real cards, which use the
+    // stable, cached `_keyFor(item.id)` (see the class doc comment on
+    // `_itemKeys`, added for the exact same class of bug on real cards).
+    // `ReorderFlex`/`ReorderDragTarget` wrap each card in a `GlobalObjectKey`
+    // compared by `identical()`, so a fresh key object on every rebuild makes
+    // Flutter tear down and reinflate the phantom's `FakeDragTarget` State —
+    // which silently drops its registered `fakeOnDragEnded` callback. When
+    // the drag is later released, `notifyDidRemovePhantom` fires into a dead
+    // (or about-to-be-replaced) `FakeDragTarget`, and the destination's own
+    // `groupEndDragging` — which is what actually calls
+    // `moveGroupItemToAnotherGroup` — never runs. No error, no exception:
+    // the dragged card just snaps back to its origin and the phantom is
+    // left stranded, exactly as observed on-device via `adb logcat`
+    // (`FakeDragTarget fakeOnDragEnded FIRED, mounted=false`).
+    testWidgets(
+      "a phantom card's State survives an unrelated group-level notify while hovering",
+      (tester) async {
+        var callbackCount = 0;
+        final controller = createTestController(
+          onMoveGroupItemToGroup: (fromGroupId, fromIndex, toGroupId, toIndex) {
+            callbackCount++;
+          },
+        );
+        controller.addGroup(AppFlowyGroupData(
+          id: 'source',
+          name: 'Source',
+          items: [TextItem('Item A')],
+        ),);
+        controller.addGroup(AppFlowyGroupData(
+          id: 'dest',
+          name: 'Dest',
+          items: <AppFlowyGroupItem>[],
+        ),);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: AppFlowyBoard(
+                controller: controller,
+                cardBuilder: (context, group, groupItem) => AppFlowyGroupCard(
+                  key: ValueKey(groupItem.id),
+                  child: Text(groupItem.id, key: Key('card_${groupItem.id}')),
+                ),
+                emptyCardBuilder: (context, groupData) => Container(
+                  key: Key('empty_${groupData.id}'),
+                  width: 100,
+                  height: 40,
+                ),
+                groupConstraints: const BoxConstraints.tightFor(width: 200, height: 400),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final sourceCenter = tester.getCenter(find.byKey(const Key('card_Item A')));
+        final emptyCenter = tester.getCenter(find.byKey(const Key('empty_dest')));
+
+        final gesture = await tester.startGesture(sourceCenter);
+        await tester.pump(const Duration(milliseconds: 50));
+        await gesture.moveTo(sourceCenter + const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 50));
+        await gesture.moveTo(emptyCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+
+        // A phantom should now be mounted in 'dest', mid-hover, not yet dropped.
+        // `FakeDragTarget` is the phantom's REAL slot (the reorder-animation
+        // machinery also renders a transient "ghost" copy of the same
+        // `PassthroughPhantomWidget` alongside it as an appear/disappear
+        // space — by design, for any active drag within this ReorderFlex —
+        // so asserting on `PassthroughPhantomWidget` directly is ambiguous;
+        // `FakeDragTarget` is unique to the one real slot).
+        expect(find.byType(FakeDragTarget<FlexDragTargetData>), findsOneWidget);
+        final phantomElementBefore = tester.element(find.byType(FakeDragTarget<FlexDragTargetData>));
+
+        // Simulate an unrelated resync landing mid-drag (e.g. wimi_task's
+        // `syncGroups` reacting to a websocket echo) — renaming the SAME
+        // group this phantom lives in must not tear the phantom down.
+        controller.getGroupController('dest')?.updateGroupName('Dest renamed');
+        await tester.pump();
+
+        expect(find.byType(FakeDragTarget<FlexDragTargetData>), findsOneWidget);
+        final phantomElementAfter = tester.element(find.byType(FakeDragTarget<FlexDragTargetData>));
+        expect(
+          identical(phantomElementBefore, phantomElementAfter),
+          isTrue,
+          reason: 'the phantom must keep its State across an unrelated rebuild of its own group',
+        );
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        // The drop must still complete correctly after the unrelated resync
+        // — the real regression, not just element identity, is that the
+        // move silently never happened.
+        expect(tester.takeException(), isNull);
+        expect(callbackCount, 1, reason: 'the drop must complete even after an unrelated mid-hover rebuild');
+        expect(
+          controller.getGroupController('dest')?.items.map((e) => e.id),
+          contains('Item A'),
+        );
+        expect(
+          controller.getGroupController('dest')?.items.every((e) => !e.isPhantom),
+          isTrue,
+          reason: 'no phantom should be left stranded in the destination group',
+        );
       },
     );
   });
