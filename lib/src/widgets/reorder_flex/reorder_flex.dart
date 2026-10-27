@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../utils/log.dart';
+import 'drag_auto_scroller.dart';
 import 'drag_state.dart';
 import 'drag_target.dart';
 import 'drag_target_interceptor.dart';
@@ -58,7 +59,11 @@ abstract class ReorderFlexAction {
 
   void Function(int)? _resetDragTargetIndex;
 
-  void Function(int) get resetDragTargetIndex => _resetDragTargetIndex!;
+  /// No-ops if no `ReorderFlex` ever wired this up — e.g. the target group
+  /// stayed empty and rendered its `emptyCardBuilder` instead of mounting a
+  /// `ReorderFlex` at all (see `AppFlowyBoardGroup.build`), so there is
+  /// nothing to reset yet.
+  void resetDragTargetIndex(int index) => _resetDragTargetIndex?.call(index);
 }
 
 class ReorderFlexConfig {
@@ -67,6 +72,10 @@ class ReorderFlexConfig {
     this.direction = Axis.vertical,
     this.dragDirection,
     this.shrinkWrap = false,
+    this.autoScrollVelocityScalar = 30.0,
+    this.horizontalPageViewportFraction,
+    this.horizontalPageCacheExtent,
+    this.autoScrollMaxTickDelta,
   }) : useMovePlaceholder = !useMoveAnimation;
 
   final bool useMoveAnimation;
@@ -90,6 +99,28 @@ class ReorderFlexConfig {
   final bool useMovePlaceholder;
 
   final bool shrinkWrap;
+
+  /// The velocity scalar for auto-scrolling when dragging near edges.
+  /// Lower values result in slower scrolling. Default is 30.0.
+  /// The previous hardcoded value was 50.0 which users reported as too fast.
+  final double autoScrollVelocityScalar;
+
+  /// When non-null and [direction] is [Axis.horizontal], children are laid
+  /// out as pages of a native [PageView] (via [PageController.viewportFraction])
+  /// instead of a plain [Row]. Null preserves the original Row-based layout —
+  /// existing callers are unaffected unless they opt in.
+  final double? horizontalPageViewportFraction;
+
+  /// [PageView.cacheExtent] used when [horizontalPageViewportFraction] is
+  /// set. Null uses [PageView]'s own default cache extent.
+  final double? horizontalPageCacheExtent;
+
+  /// Caps the per-tick auto-scroll jump distance during a drag so a single
+  /// frame can never advance further than [horizontalPageCacheExtent]
+  /// covers — guaranteeing intermediate pages mount progressively instead of
+  /// being skipped over. Null preserves unclamped behavior. See
+  /// `BoardDragAutoScroller.maxTickDelta`.
+  final double? autoScrollMaxTickDelta;
 }
 
 class ReorderFlex extends StatefulWidget {
@@ -109,6 +140,7 @@ class ReorderFlex extends StatefulWidget {
     this.leading,
     this.trailing,
     this.autoScroll = false,
+    this.dragFeedbackWrapper,
   }) : assert(
           children.every((Widget w) => w.key != null),
           'All child must have a key.',
@@ -140,6 +172,9 @@ class ReorderFlex extends StatefulWidget {
   final Widget? trailing;
   final bool autoScroll;
 
+  /// Optional wrapper applied around the drag feedback widget.
+  final Widget Function(Widget child)? dragFeedbackWrapper;
+
   @override
   State<ReorderFlex> createState() => ReorderFlexState();
 
@@ -162,9 +197,10 @@ class ReorderFlexState extends State<ReorderFlex>
 
   late ReorderFlexNotifier _notifier;
 
-  ScrollableState? _scrollable;
+  BoardDragAutoScroller? _autoScroller;
 
-  EdgeDraggingAutoScroller? _autoScroller;
+  /// Key used to get the container's render box for auto-scroll bounds calculation.
+  final GlobalKey _containerKey = GlobalKey();
 
   @override
   void initState() {
@@ -197,33 +233,38 @@ class ReorderFlexState extends State<ReorderFlex>
       resetDragTargetIndex(index);
     };
 
-    _scrollController = widget.scrollController ?? ScrollController();
+    _scrollController = widget.scrollController ??
+        (widget.config.direction == Axis.horizontal &&
+                widget.config.horizontalPageViewportFraction != null
+            ? PageController(
+                viewportFraction: widget.config.horizontalPageViewportFraction!,
+              )
+            : ScrollController());
   }
 
   @override
   void didChangeDependencies() {
-    _scrollable = Scrollable.maybeOf(context);
-    if (_scrollable != null &&
-        _autoScroller?.scrollable != _scrollable &&
-        widget.autoScroll) {
-      _autoScroller?.stopAutoScroll();
-      _autoScroller = EdgeDraggingAutoScroller(
-        _scrollable!,
+    if (widget.autoScroll && _autoScroller == null) {
+      _autoScroller = BoardDragAutoScroller(
+        scrollController: _scrollController,
+        velocityScalar: widget.config.autoScrollVelocityScalar,
+        axis: widget.config.direction,
         onScrollViewScrolled: () {
           final renderBox = draggingState.draggingKey?.currentContext
               ?.findRenderObject() as RenderBox?;
           if (renderBox != null) {
             final offset = renderBox.localToGlobal(Offset.zero);
-            final size = draggingState.feedbackSize!;
-            if (!size.isEmpty) {
+            final size = draggingState.feedbackSize;
+            if (size != null && !size.isEmpty) {
               _autoScroller?.startAutoScrollIfNecessary(
                 offset & size,
+                containerContext: context,
               );
             }
           }
         },
-        velocityScalar: 50,
       );
+      _autoScroller!.setContainerKey(_containerKey);
     }
     super.didChangeDependencies();
   }
@@ -253,6 +294,10 @@ class ReorderFlexState extends State<ReorderFlex>
   @override
   void dispose() {
     _animation.dispose();
+    _autoScroller?.dispose();
+    if (widget.scrollController == null) {
+      _scrollController.dispose();
+    }
     super.dispose();
   }
 
@@ -451,10 +496,13 @@ class ReorderFlexState extends State<ReorderFlex>
           draggingState.feedbackSize = size;
           _autoScroller?.startAutoScrollIfNecessary(
             offset & size,
+            containerContext: context,
           );
         }
       },
       onDragEnded: (dragTargetData) {
+        _autoScroller?.stopAutoScroll();
+
         if (!mounted) {
           Log.warn(
             "[DragTarget] Group \"${widget.dataSource.identifier}\" end dragging but current widget was unmounted",
@@ -523,6 +571,7 @@ class ReorderFlexState extends State<ReorderFlex>
       useMoveAnimation: widget.config.useMoveAnimation,
       draggingOpacity: widget.config.draggingWidgetOpacity,
       dragDirection: widget.config.dragDirection,
+      dragFeedbackWrapper: widget.dragFeedbackWrapper,
       child: child,
     );
   }
@@ -624,7 +673,27 @@ class ReorderFlexState extends State<ReorderFlex>
   Widget _wrapContainer(List<Widget> children) {
     switch (widget.config.direction) {
       case Axis.horizontal:
+        final viewportFraction = widget.config.horizontalPageViewportFraction;
+        if (viewportFraction != null) {
+          final cacheExtent = widget.config.horizontalPageCacheExtent;
+          // PageView's own `padEnds` (default true) centers the first/last
+          // page exactly like manual leading/trailing spacer widgets would —
+          // so, unlike the Row branch below, `leading`/`trailing` are not
+          // included here; they'd render as extra, spurious pages.
+          return PageView(
+            key: _containerKey,
+            controller: _scrollController as PageController,
+            // Flutter requires these two to agree: a non-zero cache extent
+            // only takes effect when implicit (off-screen) scrolling is
+            // allowed.
+            allowImplicitScrolling: cacheExtent != null,
+            scrollCacheExtent:
+                cacheExtent != null ? ScrollCacheExtent.pixels(cacheExtent) : null,
+            children: children,
+          );
+        }
         return Row(
+          key: _containerKey,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (widget.leading != null) widget.leading!,
@@ -634,6 +703,7 @@ class ReorderFlexState extends State<ReorderFlex>
         );
       case Axis.vertical:
         return Column(
+          key: _containerKey,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (widget.leading != null) widget.leading!,
@@ -692,6 +762,7 @@ class ReorderFlexState extends State<ReorderFlex>
           duration: const Duration(milliseconds: 120),
         )
             .then((value) {
+          if (!mounted) return;
           setState(() {
             _scrolling = false;
             completed?.call(context);
@@ -738,6 +809,7 @@ class ReorderFlexState extends State<ReorderFlex>
           curve: Curves.easeInOut,
         )
             .then((void value) {
+          if (!mounted) return;
           setState(() => _scrolling = false);
         });
       }

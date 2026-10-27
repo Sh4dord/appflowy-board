@@ -62,6 +62,7 @@ class ReorderDragTarget<T extends DragTargetData> extends StatefulWidget {
     this.draggableTargetBuilder,
     this.draggingOpacity = 0.3,
     this.dragDirection,
+    this.dragFeedbackWrapper,
   });
 
   final Widget child;
@@ -96,6 +97,9 @@ class ReorderDragTarget<T extends DragTargetData> extends StatefulWidget {
   final ReorderFlexDraggableTargetBuilder? draggableTargetBuilder;
   final double draggingOpacity;
   final Axis? dragDirection;
+
+  /// Optional wrapper applied around the drag feedback widget.
+  final Widget Function(Widget child)? dragFeedbackWrapper;
 
   @override
   State<ReorderDragTarget<T>> createState() => _ReorderDragTargetState<T>();
@@ -138,11 +142,12 @@ class _ReorderDragTargetState<T extends DragTargetData>
       builder: (BuildContext context) {
         final BoxConstraints contentSizeConstraints =
             BoxConstraints.loose(_draggingFeedbackSize!);
-        return _buildDraggableFeedback(
+        final feedback = _buildDraggableFeedback(
           context,
           contentSizeConstraints,
           widget.child,
         );
+        return widget.dragFeedbackWrapper?.call(feedback) ?? feedback;
       },
     );
 

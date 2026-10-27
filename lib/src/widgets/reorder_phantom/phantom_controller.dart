@@ -108,6 +108,14 @@ class BoardPhantomController extends OverlapDragTargetDelegate
     if (didRemove) {
       phantomState.notifyDidRemovePhantom(groupId);
       phantomState.removeGroupListener(groupId);
+      // Mirrors groupEndDragging's cleanup: inserting a phantom into this
+      // group marked it "dragging" (via the phantom's own fake drag-started
+      // wiring in ReorderFlex). A normal drop calls groupEndDragging, which
+      // resets that flag — but backing out of a hover without dropping
+      // (cancel(), or switching directly to a different target group) only
+      // ever went through here, leaving the flag stuck `true` forever and
+      // making getInsertedIndex permanently return -1 for this group.
+      phantomState.setGroupIsDragging(groupId, false);
     }
   }
 
