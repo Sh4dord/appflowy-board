@@ -1,7 +1,12 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:appflowy_board/appflowy_board.dart';
 import 'package:appflowy_board/src/widgets/board_group/group.dart';
+import 'package:appflowy_board/src/widgets/reorder_flex/reorder_flex.dart';
+import 'package:appflowy_board/src/widgets/reorder_flex/drag_target.dart';
+import 'package:appflowy_board/src/widgets/reorder_flex/drag_state.dart';
 
 // Test data models
 class TextItem extends AppFlowyGroupItem {
@@ -21,6 +26,26 @@ class RichTextItem extends AppFlowyGroupItem {
 
   @override
   String get id => title;
+}
+
+class _StubReorderFlexItem extends ReoderFlexItem {
+  _StubReorderFlexItem(this.id);
+
+  @override
+  final String id;
+}
+
+class _StubReorderFlexDataSource extends ReoderFlexDataSource {
+  _StubReorderFlexDataSource({required List<String> itemIds})
+      : items = UnmodifiableListView(
+          itemIds.map((id) => _StubReorderFlexItem(id)),
+        );
+
+  @override
+  String get identifier => 'stub';
+
+  @override
+  final UnmodifiableListView<ReoderFlexItem> items;
 }
 
 // Test helpers
@@ -438,6 +463,63 @@ void main() {
         final cardElementAfter = tester.element(find.byKey(const Key('card_t1')));
         expect(identical(groupElementBefore, groupElementAfter), isTrue);
         expect(identical(cardElementBefore, cardElementAfter), isTrue);
+      },
+    );
+
+    testWidgets(
+      'horizontal board renders a Row (not PageView) when no paging config is set',
+      (tester) async {
+        final controller = createTestController();
+        controller.addGroup(AppFlowyGroupData(
+          id: 'group1',
+          name: 'List 1',
+          items: [TextItem('t1')],
+        ),);
+
+        await tester.pumpWidget(buildTestBoard(controller: controller));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PageView), findsNothing);
+        expect(find.byType(Row), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'horizontal board renders a PageView when horizontalPageViewportFraction is set via ReorderFlex directly',
+      (tester) async {
+        const config = ReorderFlexConfig(
+          direction: Axis.horizontal,
+          dragDirection: Axis.horizontal,
+          horizontalPageViewportFraction: 0.9,
+        );
+        final dataSource = _StubReorderFlexDataSource(itemIds: ['a', 'b', 'c']);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 400,
+                height: 200,
+                child: ReorderFlex(
+                  scrollController: null,
+                  config: config,
+                  dataSource: dataSource,
+                  onReorder: (from, to) {},
+                  children: [
+                    SizedBox(key: const ValueKey('a'), width: 360, child: const Text('a')),
+                    SizedBox(key: const ValueKey('b'), width: 360, child: const Text('b')),
+                    SizedBox(key: const ValueKey('c'), width: 360, child: const Text('c')),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PageView), findsOneWidget);
+        final pageView = tester.widget<PageView>(find.byType(PageView));
+        expect((pageView.controller as PageController).viewportFraction, 0.9);
       },
     );
   });
@@ -951,6 +1033,235 @@ void main() {
         );
       },
     );
+
+    // Regression test for: hovering a genuinely EMPTY destination group
+    // (zero items — no placeholder, matching wimi_task's current
+    // kanban_appflowy_board_sync.dart, which stopped inserting a permanent
+    // placeholder item as of the "Fixed empty center" change) without ever
+    // dropping there — then backing the drag out to somewhere else — used
+    // to permanently disable that group as a drop target for the rest of
+    // the app's lifetime. Root cause: `BoardPhantomController._insertPhantom`
+    // mounting a phantom in an empty group triggers that group's
+    // `ReorderFlex.onDragStarted` (via the phantom's fake drag target),
+    // which calls `groupStartDragging` and marks the group as "dragging".
+    // `cancel()` (fired when the drag backs out without dropping) removed
+    // the phantom via `_removePhantom` but never called the matching
+    // `groupEndDragging`/`setGroupIsDragging(groupId, false)` — so the flag
+    // stayed stuck `true` forever, and `getInsertedIndex` unconditionally
+    // returns -1 for a group it thinks is "still dragging", silently
+    // killing every future hover/drop attempt (no phantom shown, no
+    // callback fires, no error — see `drag_target_interceptor.dart`'s
+    // delayed branch: `if (index != -1) { ... }`).
+    testWidgets(
+      'a genuinely empty group accepts a drop again after an earlier hover was cancelled without dropping',
+      (tester) async {
+        var callbackCount = 0;
+        String? capturedToGroup;
+
+        final controller = createTestController(
+          onMoveGroupItemToGroup: (fromGroupId, fromIndex, toGroupId, toIndex) {
+            callbackCount++;
+            capturedToGroup = toGroupId;
+          },
+        );
+        controller.addGroup(AppFlowyGroupData(
+          id: 'source',
+          name: 'Source',
+          items: [TextItem('Item A'), TextItem('Item B')],
+        ),);
+        // Genuinely empty — no placeholder item, matching production. Must
+        // be a growable `List<AppFlowyGroupItem>`, not `const []` (immutable)
+        // and not the narrower `List<TextItem>` (AppFlowyGroupData/Controller
+        // store this list by reference and later `insert()` a PhantomGroupItem
+        // into it without copying first — a narrower reified type throws a
+        // TypeError on that insert, exactly like wimi_task's own
+        // kanban_appflowy_board_sync.dart documents for its item lists).
+        controller.addGroup(AppFlowyGroupData(
+          id: 'empty',
+          name: 'Empty',
+          items: <AppFlowyGroupItem>[],
+        ),);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: AppFlowyBoard(
+                controller: controller,
+                cardBuilder: (context, group, groupItem) => AppFlowyGroupCard(
+                  key: ValueKey(groupItem.id),
+                  child: Text(groupItem.id, key: Key('card_${groupItem.id}')),
+                ),
+                emptyCardBuilder: (context, groupData) => Container(
+                  key: Key('empty_${groupData.id}'),
+                  width: 100,
+                  height: 40,
+                ),
+                groupConstraints: const BoxConstraints.tightFor(width: 200, height: 400),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final sourceCenter = tester.getCenter(find.byKey(const Key('card_Item A')));
+        final emptyCenter = tester.getCenter(find.byKey(const Key('empty_empty')));
+
+        // First attempt: hover the empty group, then back OUT without
+        // dropping there — release back over the source group instead.
+        final firstGesture = await tester.startGesture(sourceCenter);
+        await tester.pump(const Duration(milliseconds: 50));
+        await firstGesture.moveTo(sourceCenter + const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 50));
+        await firstGesture.moveTo(emptyCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+        // Back out to the source group instead of dropping on 'empty'.
+        await firstGesture.moveTo(sourceCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await firstGesture.up();
+        await tester.pumpAndSettle();
+
+        expect(callbackCount, 0, reason: 'the first drag was cancelled, not dropped');
+
+        // Second attempt: a fresh drag hovering the SAME empty group, this
+        // time actually dropping there. Without the fix, this silently
+        // does nothing (no phantom, no callback) because the group is
+        // still marked as "dragging" from the first, cancelled attempt.
+        final secondSourceCenter = tester.getCenter(find.byKey(const Key('card_Item B')));
+        final secondGesture = await tester.startGesture(secondSourceCenter);
+        await tester.pump(const Duration(milliseconds: 50));
+        await secondGesture.moveTo(secondSourceCenter + const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 50));
+        await secondGesture.moveTo(emptyCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+        await secondGesture.up();
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          callbackCount,
+          1,
+          reason: 'the empty group must still accept a drop after an earlier cancelled hover',
+        );
+        expect(capturedToGroup, 'empty');
+      },
+    );
+
+    // Regression test for: a phantom card mounted mid-hover does not survive
+    // an UNRELATED rebuild of its own group (e.g. a websocket-driven
+    // `syncGroups` resync landing while the user is still dragging). Root
+    // cause: `_AppFlowyBoardGroupState._buildWidget`'s phantom branch keys
+    // the phantom's `PassthroughPhantomWidget` with `UniqueKey()`, constructed
+    // fresh on every single `build()` — unlike real cards, which use the
+    // stable, cached `_keyFor(item.id)` (see the class doc comment on
+    // `_itemKeys`, added for the exact same class of bug on real cards).
+    // `ReorderFlex`/`ReorderDragTarget` wrap each card in a `GlobalObjectKey`
+    // compared by `identical()`, so a fresh key object on every rebuild makes
+    // Flutter tear down and reinflate the phantom's `FakeDragTarget` State —
+    // which silently drops its registered `fakeOnDragEnded` callback. When
+    // the drag is later released, `notifyDidRemovePhantom` fires into a dead
+    // (or about-to-be-replaced) `FakeDragTarget`, and the destination's own
+    // `groupEndDragging` — which is what actually calls
+    // `moveGroupItemToAnotherGroup` — never runs. No error, no exception:
+    // the dragged card just snaps back to its origin and the phantom is
+    // left stranded, exactly as observed on-device via `adb logcat`
+    // (`FakeDragTarget fakeOnDragEnded FIRED, mounted=false`).
+    testWidgets(
+      "a phantom card's State survives an unrelated group-level notify while hovering",
+      (tester) async {
+        var callbackCount = 0;
+        final controller = createTestController(
+          onMoveGroupItemToGroup: (fromGroupId, fromIndex, toGroupId, toIndex) {
+            callbackCount++;
+          },
+        );
+        controller.addGroup(AppFlowyGroupData(
+          id: 'source',
+          name: 'Source',
+          items: [TextItem('Item A')],
+        ),);
+        controller.addGroup(AppFlowyGroupData(
+          id: 'dest',
+          name: 'Dest',
+          items: <AppFlowyGroupItem>[],
+        ),);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: AppFlowyBoard(
+                controller: controller,
+                cardBuilder: (context, group, groupItem) => AppFlowyGroupCard(
+                  key: ValueKey(groupItem.id),
+                  child: Text(groupItem.id, key: Key('card_${groupItem.id}')),
+                ),
+                emptyCardBuilder: (context, groupData) => Container(
+                  key: Key('empty_${groupData.id}'),
+                  width: 100,
+                  height: 40,
+                ),
+                groupConstraints: const BoxConstraints.tightFor(width: 200, height: 400),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final sourceCenter = tester.getCenter(find.byKey(const Key('card_Item A')));
+        final emptyCenter = tester.getCenter(find.byKey(const Key('empty_dest')));
+
+        final gesture = await tester.startGesture(sourceCenter);
+        await tester.pump(const Duration(milliseconds: 50));
+        await gesture.moveTo(sourceCenter + const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 50));
+        await gesture.moveTo(emptyCenter);
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+
+        // A phantom should now be mounted in 'dest', mid-hover, not yet dropped.
+        // `FakeDragTarget` is the phantom's REAL slot (the reorder-animation
+        // machinery also renders a transient "ghost" copy of the same
+        // `PassthroughPhantomWidget` alongside it as an appear/disappear
+        // space — by design, for any active drag within this ReorderFlex —
+        // so asserting on `PassthroughPhantomWidget` directly is ambiguous;
+        // `FakeDragTarget` is unique to the one real slot).
+        expect(find.byType(FakeDragTarget<FlexDragTargetData>), findsOneWidget);
+        final phantomElementBefore = tester.element(find.byType(FakeDragTarget<FlexDragTargetData>));
+
+        // Simulate an unrelated resync landing mid-drag (e.g. wimi_task's
+        // `syncGroups` reacting to a websocket echo) — renaming the SAME
+        // group this phantom lives in must not tear the phantom down.
+        controller.getGroupController('dest')?.updateGroupName('Dest renamed');
+        await tester.pump();
+
+        expect(find.byType(FakeDragTarget<FlexDragTargetData>), findsOneWidget);
+        final phantomElementAfter = tester.element(find.byType(FakeDragTarget<FlexDragTargetData>));
+        expect(
+          identical(phantomElementBefore, phantomElementAfter),
+          isTrue,
+          reason: 'the phantom must keep its State across an unrelated rebuild of its own group',
+        );
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        // The drop must still complete correctly after the unrelated resync
+        // — the real regression, not just element identity, is that the
+        // move silently never happened.
+        expect(tester.takeException(), isNull);
+        expect(callbackCount, 1, reason: 'the drop must complete even after an unrelated mid-hover rebuild');
+        expect(
+          controller.getGroupController('dest')?.items.map((e) => e.id),
+          contains('Item A'),
+        );
+        expect(
+          controller.getGroupController('dest')?.items.every((e) => !e.isPhantom),
+          isTrue,
+          reason: 'no phantom should be left stranded in the destination group',
+        );
+      },
+    );
   });
 
   group('AppFlowyBoard - Dragging State', () {
@@ -1223,5 +1534,100 @@ void main() {
       expect(find.text('Simple: Simple Text'), findsOneWidget);
       expect(find.text('Rich: Rich'), findsOneWidget);
     });
+  });
+
+  group('AppFlowyBoard - Paged Columns', () {
+    testWidgets(
+      'a board with groupPageViewportFraction set renders no horizontal SingleChildScrollView and pages via PageController',
+      (tester) async {
+        final controller = createTestController();
+        controller.addGroups([
+          AppFlowyGroupData(id: 'g1', name: 'List 1', items: [TextItem('t1')]),
+          AppFlowyGroupData(id: 'g2', name: 'List 2', items: [TextItem('t2')]),
+        ]);
+
+        await tester.pumpWidget(
+          buildTestBoard(
+            controller: controller,
+            config: const AppFlowyBoardConfig(groupPageViewportFraction: 0.9),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final horizontalScrollViews = find.byWidgetPredicate(
+          (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+        );
+        expect(horizontalScrollViews, findsNothing);
+        expect(find.byType(PageView), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a column outside the cache window is unmounted until the PageController scrolls near it',
+      (tester) async {
+        final controller = createTestController();
+        controller.addGroups(
+          List.generate(
+            20,
+            (i) => AppFlowyGroupData(
+              id: 'g$i',
+              name: 'List $i',
+              items: [TextItem('t$i')],
+            ),
+          ),
+        );
+        final pageController = PageController(viewportFraction: 1.0);
+        addTearDown(pageController.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 400,
+                height: 600,
+                child: AppFlowyBoard(
+                  controller: controller,
+                  scrollController: pageController,
+                  cardBuilder: (context, group, groupItem) => AppFlowyGroupCard(
+                    key: ValueKey(groupItem.id),
+                    child: Text(groupItem.id, key: Key('card_${groupItem.id}')),
+                  ),
+                  headerBuilder: (context, groupData) =>
+                      Text('header:${groupData.id}', key: Key('header_${groupData.id}')),
+                  groupConstraints: const BoxConstraints.tightFor(width: 400),
+                  config: const AppFlowyBoardConfig(
+                    groupPageViewportFraction: 1.0,
+                    groupPageCacheExtent: 400, // ~1 page ahead
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Column 15 is far outside a ~1-page cache window from column 0.
+        expect(find.byKey(const Key('header_g15')), findsNothing);
+
+        pageController.jumpToPage(15);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('header_g15')), findsOneWidget);
+
+        // And column 0, now far behind, should no longer be mounted.
+        expect(find.byKey(const Key('header_g0')), findsNothing);
+      },
+    );
+  });
+
+  group('ReorderFlexAction', () {
+    test(
+      'resetDragTargetIndex does not throw when no ReorderFlex ever wired it '
+      '(e.g. a target group whose column stayed empty and never mounted one)',
+      () {
+        final action = ReorderFlexActionImpl();
+        expect(() => action.resetDragTargetIndex(0), returnsNormally);
+      },
+    );
   });
 }

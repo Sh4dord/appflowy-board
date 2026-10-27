@@ -15,12 +15,17 @@ class BoardDragAutoScroller {
     required this.velocityScalar,
     required this.axis,
     this.onScrollViewScrolled,
+    this.maxTickDelta,
   });
 
   final ScrollController scrollController;
   final double velocityScalar;
   final Axis axis;
   final VoidCallback? onScrollViewScrolled;
+
+  /// Caps the magnitude of a single [_onTick]'s scroll advance. Null
+  /// preserves unclamped behavior (the original default).
+  final double? maxTickDelta;
 
   /// The size of the edge area that triggers auto-scrolling.
   static const double _edgeSize = 80.0;
@@ -159,7 +164,9 @@ class BoardDragAutoScroller {
     }
 
     final position = scrollController.position;
-    final newOffset = (position.pixels + _scrollVelocity).clamp(
+    final cap = maxTickDelta;
+    final delta = cap != null ? _scrollVelocity.clamp(-cap, cap) : _scrollVelocity;
+    final newOffset = (position.pixels + delta).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );
